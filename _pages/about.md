@@ -9,9 +9,9 @@ profile:
   image_circular: true # crops the image to make it circular
   address: 
 news: true  # includes a list of news items
-latest_posts: true  # includes a list of the newest posts
+latest_posts: false  # includes a list of the newest posts
 selected_papers: false # includes a list of papers marked as "selected={true}"
-social: true  # includes social icons at the bottom of the page
+social: false  # includes social icons at the bottom of the page
 ---
 
 Min Hu is currently a student in the [School of Journalism and Communication, Nanjing University](http://jc.nju.edu.cn). To accomplish her homework, she created this page.
