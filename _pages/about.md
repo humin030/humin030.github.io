@@ -14,8 +14,7 @@ selected_papers: false # includes a list of papers marked as "selected={true}"
 social: false  # includes social icons at the bottom of the page
 ---
 
-Min Hu is currently a student in the [School of Journalism and Communication, Nanjing University](http://jc.nju.edu.cn). To accomplish her homework, she created this page.
-
+Min Hu is currently a student in the [School of Journalism and Communication, Nanjing University](http://jc.nju.edu.cn). 
 <img src="/assets/img/cat_meme.jpg" align = "middle" width = "800px">
 
 
