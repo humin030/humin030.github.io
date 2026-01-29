@@ -15,7 +15,13 @@ social: false  # includes social icons at the bottom of the page
 ---
 
 Min Hu is currently a student in the [School of Journalism and Communication, Nanjing University](http://jc.nju.edu.cn). 
-<img src="/assets/img/cat_meme.jpg" align = "middle" width = "800px">
+
+I hold a BA in Advertising from Nanjing University and am now pursuing a Master's in Communication, with a research focus on risk communication​ and global brand strategy.
+My academic journey bridges creative strategy and data analysis. Through courses like Digital Marketing Analytics and hands-on projects, I've developed a keen sense for audience insight. Currently, my work focuses on risk communication​ and brands going global. I'm fascinated by how stories, crises, and trust travel online. To understand this, I'm training in computational communication—using Python, network analysis, and AI-assisted tools​ to ask new questions about old problems.
+
+My professional experience at MSL and campus editorial roles have grounded my research in real-world communication challenges. Here on GitHub, I'm building my data toolkit, documenting projects that translate communication theories into analyzable data. I aim to develop practical frameworks that help brands navigate complex cross-cultural information environments.
+
+Coming from a humanities background, I approach data with a critical and contextual lens. I believe powerful communication in the digital age requires both sociological imagination and data literacy.
 
 
 <br>
