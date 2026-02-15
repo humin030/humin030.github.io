@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>终端设备修复 </title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --grid-bg: #1e1e1e;
+            --grid-border: #333;
+            --neon-green: #a4e022;
+            --neon-green-dim: rgba(164, 224, 34, 0.2);
+            --blocked-bg: #2a2a2a;
+            --text-color: #ddd;
+            --piece-stroke: #25330a; 
+            --cell-size: 45px;
+            --cell-gap: 2px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .header { text-align: center; margin-bottom: 20px; }
+        h2 { color: var(--neon-green); margin: 0 0 5px 0; letter-spacing: 2px;}
+        p { color: #888; font-size: 13px; margin: 0 0 10px 0; }
+        .level-badge {
+            display: inline-block;
+            background: #333;
+            color: var(--neon-green);
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            border: 1px solid var(--neon-green);
+        }
+
+        .game-wrapper {
+            display: flex;
+            gap: 40px;
+            background: #181818;
+            padding: 30px;
+            border-radius: 4px;
+            border: 1px solid #222;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        /* --- 核心改进：指示灯布局重构 --- */
+        .board-container {
+            display: grid;
+            /* 自适应指示灯区域的宽度和高度 */
+            grid-template-columns: max-content auto;
+            grid-template-rows: max-content auto;
+            gap: 12px;
+        }
+
+        .col-indicators { grid-column: 2; display: flex; justify-content: space-around; align-items: flex-end; }
+        .row-indicators { grid-row: 2; display: flex; flex-direction: column; justify-content: space-around; align-items: flex-end; padding-right: 5px;}
+        
+        .ind-group { display: flex; gap: 4px; }
+        /* 行指示灯：水平排列的竖线 */
+        .row-indicators .ind-group { flex-direction: row; align-items: center; } 
+        /* 列指示灯：垂直排列的横线（利用 column-reverse 让灯从下往上亮，更符合视觉习惯） */
+        .col-indicators .ind-group { flex-direction: column-reverse; align-items: center; } 
+
+        .ind-line { background: #333; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 2px; }
+        .row-indicators .ind-line { width: 4px; height: 16px; }
+        .col-indicators .ind-line { width: 16px; height: 4px; }
+        
+        /* 激活时的霓虹灯效果 */
+        .ind-line.active { 
+            background: var(--neon-green); 
+            box-shadow: 0 0 6px var(--neon-green); 
+        }
+
+        /* 主网格 */
+        .board {
+            grid-column: 2;
+            grid-row: 2;
+            display: grid;
+            gap: var(--cell-gap);
+            background-color: var(--grid-border);
+            border: 2px solid #444;
+            padding: 2px;
+            position: relative;
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: var(--grid-bg);
+            box-sizing: border-box;
+            position: relative;
+            transition: background-color 0.1s;
+        }
+
+        .cell.blocked {
+            background: repeating-linear-gradient(45deg, var(--blocked-bg), var(--blocked-bg) 5px, #2a2a2a 5px, #2a2a2a 10px);
+            display: flex; justify-content: center; align-items: center;
+        }
+        .cell.blocked::after { content: "⊘"; color: #555; font-size: 24px; }
+
+        .cell.filled {
+            background-color: var(--neon-green);
+            cursor: pointer;
+            z-index: 2;
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.15);
+        }
+
+        .cell.preview { background-color: var(--neon-green-dim); outline: 2px dashed var(--neon-green); outline-offset: -2px; z-index: 3;}
+        .cell.preview-invalid { background-color: rgba(255, 50, 50, 0.3); outline: 2px dashed red; outline-offset: -2px; z-index: 3;}
+
+        /* 右侧元件库 */
+        .pieces-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            width: 260px;
+            border-left: 2px dashed #333;
+            padding-left: 30px;
+            align-content: start;
+        }
+
+        .piece-container {
+            cursor: grab;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #333;
+            transition: all 0.2s;
+            min-height: 80px;
+            position: relative;
+        }
+
+        .piece-container:hover { border-color: #777; background: #2a2a2a; }
+        .piece-container.used { opacity: 0; pointer-events: none; }
+        .piece-container.dragging-source { opacity: 0.3; }
+
+        .mini-grid { display: grid; gap: 1px; pointer-events: none; }
+        .mini-cell { width: 16px; height: 16px; background-color: transparent; box-sizing: border-box;}
+        .mini-cell.active { background-color: var(--neon-green); border: 1px solid #111; }
+
+        /* 拖拽幽灵元素 */
+        #drag-ghost {
+            position: fixed;
+            pointer-events: none;
+            z-index: 9999;
+            display: grid;
+            gap: var(--cell-gap);
+            transform: scale(1.05);
+            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+            opacity: 0.9;
+        }
+        .ghost-cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            box-sizing: border-box;
+            background-color: transparent;
+        }
+        .ghost-cell.active {
+            background-color: var(--neon-green);
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.15);
+        }
+
+        .controls { margin-top: 30px; display: flex; gap: 15px;}
+        button {
+            background: transparent; color: #888; border: 1px solid #555;
+            padding: 8px 24px; cursor: pointer; border-radius: 20px;
+            font-size: 14px; transition: all 0.2s;
+        }
+        button:hover { background: #333; color: white; border-color: #888; }
+        button.primary { color: var(--neon-green); border-color: var(--neon-green); }
+        button.primary:hover { background: var(--neon-green-dim); }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>// 设备电路修复</h2>
+        <p>规则：右键点击元件旋转，左键拖拽放置。灯管数量代表该行/列所需的能量块。</p>
+        <div class="level-badge" id="level-badge">Level 1</div>
+    </div>
+
+    <div class="game-wrapper">
+        <div class="board-container">
+            <div></div>
+            <div class="col-indicators" id="col-indicators"></div>
+            <div class="row-indicators" id="row-indicators"></div>
+            <div class="board" id="board"></div>
+        </div>
+        
+        <div class="pieces-panel" id="pieces-panel"></div>
+    </div>
+
+    <div class="controls">
+        <button onclick="resetLevel()">重置本关</button>
+        <button class="primary" id="btn-next" style="display:none;" onclick="nextLevel()">进入下一关 >></button>
+    </div>
+
+<script>
+    const LEVELS = [
+        {
+            // Level 1: 4x4 无障碍，16个方块，难度：新手
+            id: 1, size: 4, obstacles: [],
+            pieces: [
+                { id: 1, shape: [[1,1,1,1]] },             // I型 (4)
+                { id: 2, shape: [[1,1], [1,1]] },          // 田字 (4)
+                { id: 3, shape: [[1,1], [0,1]] },          // 小L (3)
+                { id: 4, shape: [[0,1,0], [1,1,1]] },      // T型 (4)
+                { id: 5, shape: [[1]] }                    // 单点 (1)
+            ]
+        },
+        {
+            // Level 2: 5x5 中心障碍，24个方块，难度：进阶
+            id: 2, size: 5, obstacles: [{x:2, y:2}], 
+            pieces: [
+                { id: 1, shape: [[1,1,1], [1,0,0], [1,0,0]] },  // 大L (5)
+                { id: 2, shape: [[1,1], [1,1], [0,1]] },        // P型 (5)
+                { id: 3, shape: [[1,1], [1,0], [1,0]] },        // 中L (4)
+                { id: 4, shape: [[0,1,0], [1,1,1], [0,0,1]] },  // 闪电畸变 (5)
+                { id: 5, shape: [[1,0,0,0], [1,1,1,1]] }        // 长柄勺 (5)
+            ]
+        },
+        {
+            // Level 3: 6x6 经典双对角障碍，34个方块，难度：专家
+            id: 3, size: 6, obstacles: [{x:0, y:0}, {x:5, y:5}],
+            pieces: [
+                { id: 1, shape: [[1, 1, 1], [1, 1, 0]] },
+                { id: 2, shape: [[1, 1], [1, 1], [1, 0]] },
+                { id: 3, shape: [[1, 0], [1, 1], [1, 1]] },
+                { id: 4, shape: [[1, 1, 1], [1, 0, 0], [1, 0, 0]] },
+                { id: 5, shape: [[0, 1], [1, 1], [0, 1]] },
+                { id: 6, shape: [[1, 0], [1, 1], [1, 1]] },
+                { id: 7, shape: [[1, 1, 0], [1, 1, 1]] }
+            ]
+        }
+    ];
+
+    let currentLevelIdx = 0;
+    let SIZE = 0;
+    let levelConfig = null;
+    let boardState = []; 
+    let pieces = [];
+
+    let dragData = null; 
+    const CELL_SIZE = 45;
+    const CELL_GAP = 2;
+    const TOTAL_CELL_STEP = CELL_SIZE + CELL_GAP;
+
+    const boardEl = document.getElementById('board');
+    const panelEl = document.getElementById('pieces-panel');
+    const colIndEl = document.getElementById('col-indicators');
+    const rowIndEl = document.getElementById('row-indicators');
+
+    function loadLevel(idx) {
+        currentLevelIdx = idx;
+        levelConfig = LEVELS[idx];
+        SIZE = levelConfig.size;
+        document.getElementById('level-badge').innerText = `Level ${idx + 1} / ${LEVELS.length}`;
+        document.getElementById('btn-next').style.display = 'none';
+
+        boardEl.style.gridTemplateColumns = `repeat(${SIZE}, ${CELL_SIZE}px)`;
+        boardEl.style.gridTemplateRows = `repeat(${SIZE}, ${CELL_SIZE}px)`;
+
+        boardState = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+        pieces = JSON.parse(JSON.stringify(levelConfig.pieces)).map(p => ({...p, used: false}));
+        
+        initIndicators();
+        renderBoard();
+        renderPieces();
+        updateIndicators();
+    }
+
+    // --- 核心改进：生成对应答案数量的指示灯排 ---
+    function initIndicators() {
+        colIndEl.innerHTML = ''; 
+        rowIndEl.innerHTML = '';
+        
+        for(let i = 0; i < SIZE; i++) {
+            // 计算当前行/列的目标方块数（总宽度 - 障碍物数量）
+            let colTarget = SIZE;
+            let rowTarget = SIZE;
+            levelConfig.obstacles.forEach(obs => {
+                if(obs.x === i) colTarget--;
+                if(obs.y === i) rowTarget--;
+            });
+
+            // 渲染行指示灯（横向排列小竖线）
+            let rowHtml = `<div class="ind-group" id="row-ind-${i}">`;
+            for(let j = 0; j < rowTarget; j++) rowHtml += `<div class="ind-line"></div>`;
+            rowHtml += `</div>`;
+            rowIndEl.innerHTML += rowHtml;
+
+            // 渲染列指示灯（纵向排列小横线）
+            let colHtml = `<div class="ind-group" id="col-ind-${i}">`;
+            for(let j = 0; j < colTarget; j++) colHtml += `<div class="ind-line"></div>`;
+            colHtml += `</div>`;
+            colIndEl.innerHTML += colHtml;
+        }
+    }
+
+    // --- 核心改进：根据放入的方块数，点亮对应数量的灯 ---
+    function updateIndicators() {
+        for (let i = 0; i < SIZE; i++) {
+            let colFilled = 0, rowFilled = 0;
+            // 统计当前行/列填入了多少个方块
+            for (let r = 0; r < SIZE; r++) {
+                if(boardState[r][i] > 0) colFilled++;
+                if(boardState[i][r] > 0) rowFilled++;
+            }
+            
+            // 更新行指示灯
+            const rowLines = document.getElementById(`row-ind-${i}`).children;
+            for(let j = 0; j < rowLines.length; j++) {
+                rowLines[j].classList.toggle('active', j < rowFilled);
+            }
+
+            // 更新列指示灯
+            const colLines = document.getElementById(`col-ind-${i}`).children;
+            for(let j = 0; j < colLines.length; j++) {
+                colLines[j].classList.toggle('active', j < colFilled);
+            }
+        }
+    }
+
+    function isObstacle(x, y) { return levelConfig.obstacles.some(p => p.x === x && p.y === y); }
+
+    function renderBoard() {
+        boardEl.innerHTML = '';
+        for (let y = 0; y < SIZE; y++) {
+            for (let x = 0; x < SIZE; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                if (isObstacle(x, y)) cell.classList.add('blocked');
+                
+                if (boardState[y][x] > 0) {
+                    cell.classList.add('filled');
+                    const id = boardState[y][x];
+                    const stroke = '3px solid var(--piece-stroke)';
+                    const inner = '1px solid rgba(0, 0, 0, 0.1)';
+
+                    cell.style.borderTop = (y === 0 || boardState[y-1][x] !== id) ? stroke : inner;
+                    cell.style.borderBottom = (y === SIZE-1 || boardState[y+1][x] !== id) ? stroke : inner;
+                    cell.style.borderLeft = (x === 0 || boardState[y][x-1] !== id) ? stroke : inner;
+                    cell.style.borderRight = (x === SIZE-1 || boardState[y][x+1] !== id) ? stroke : inner;
+                }
+
+                cell.addEventListener('click', () => {
+                    if (boardState[y][x] > 0) removePiece(boardState[y][x]);
+                });
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+
+    function renderPieces() {
+        panelEl.innerHTML = '';
+        pieces.forEach((piece, index) => {
+            const container = document.createElement('div');
+            container.className = `piece-container ${piece.used ? 'used' : ''}`;
+            container.dataset.idx = index;
+            
+            container.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if(!piece.used) rotatePiece(index);
+            });
+
+            container.addEventListener('pointerdown', (e) => startDrag(e, index, container));
+
+            const rows = piece.shape.length;
+            const cols = piece.shape[0].length;
+            const miniGrid = document.createElement('div');
+            miniGrid.className = 'mini-grid';
+            miniGrid.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const miniCell = document.createElement('div');
+                    miniCell.className = `mini-cell ${piece.shape[y][x] ? 'active' : ''}`;
+                    miniGrid.appendChild(miniCell);
+                }
+            }
+            container.appendChild(miniGrid);
+            panelEl.appendChild(container);
+        });
+    }
+
+    function rotatePiece(index) {
+        const piece = pieces[index];
+        const m = piece.shape;
+        piece.shape = m[0].map((val, idx) => m.map(row => row[idx]).reverse());
+        renderPieces();
+    }
+
+    function removePiece(id) {
+        for (let y = 0; y < SIZE; y++) {
+            for (let x = 0; x < SIZE; x++) {
+                if (boardState[y][x] === id) boardState[y][x] = 0;
+            }
+        }
+        pieces.find(p => p.id === id).used = false;
+        renderBoard(); renderPieces(); updateIndicators();
+    }
+
+    let ghostEl = null;
+    let hoverGrid = { x: -1, y: -1 };
+
+    function startDrag(e, index, container) {
+        if (e.button === 2 || pieces[index].used) return; 
+        
+        container.classList.add('dragging-source');
+        const piece = pieces[index];
+        
+        ghostEl = document.createElement('div');
+        ghostEl.id = 'drag-ghost';
+        const rows = piece.shape.length;
+        const cols = piece.shape[0].length;
+        
+        ghostEl.style.gridTemplateColumns = `repeat(${cols}, ${CELL_SIZE}px)`;
+        ghostEl.style.width = `${cols * TOTAL_CELL_STEP}px`;
+        ghostEl.style.height = `${rows * TOTAL_CELL_STEP}px`;
+
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const cell = document.createElement('div');
+                cell.className = `ghost-cell ${piece.shape[y][x] ? 'active' : ''}`;
+                if(piece.shape[y][x]) {
+                    const stroke = '3px solid var(--piece-stroke)';
+                    const inner = '1px solid rgba(0, 0, 0, 0.1)';
+                    cell.style.borderTop = (y===0 || !piece.shape[y-1][x]) ? stroke : inner;
+                    cell.style.borderBottom = (y===rows-1 || !piece.shape[y+1][x]) ? stroke : inner;
+                    cell.style.borderLeft = (x===0 || !piece.shape[y][x-1]) ? stroke : inner;
+                    cell.style.borderRight = (x===cols-1 || !piece.shape[y][x+1]) ? stroke : inner;
+                }
+                ghostEl.appendChild(cell);
+            }
+        }
+        document.body.appendChild(ghostEl);
+
+        dragData = {
+            idx: index,
+            offsetX: (cols * TOTAL_CELL_STEP) / 2, 
+            offsetY: (rows * TOTAL_CELL_STEP) / 2
+        };
+
+        moveGhost(e);
+        
+        document.addEventListener('pointermove', onDragMove);
+        document.addEventListener('pointerup', onDragEnd);
+    }
+
+    function moveGhost(e) {
+        if (!ghostEl) return;
+        ghostEl.style.left = `${e.clientX - dragData.offsetX}px`;
+        ghostEl.style.top = `${e.clientY - dragData.offsetY}px`;
+    }
+
+    function onDragMove(e) {
+        moveGhost(e);
+        
+        const boardRect = boardEl.getBoundingClientRect();
+        const piece = pieces[dragData.idx];
+        
+        const relX = e.clientX - dragData.offsetX - boardRect.left;
+        const relY = e.clientY - dragData.offsetY - boardRect.top;
+        
+        const gridX = Math.round(relX / TOTAL_CELL_STEP);
+        const gridY = Math.round(relY / TOTAL_CELL_STEP);
+
+        if (gridX !== hoverGrid.x || gridY !== hoverGrid.y) {
+            hoverGrid = { x: gridX, y: gridY };
+            updatePreview(piece.shape, gridX, gridY);
+        }
+    }
+
+    function updatePreview(shape, startX, startY) {
+        const cells = boardEl.children;
+        for (let i = 0; i < cells.length; i++) cells[i].classList.remove('preview', 'preview-invalid');
+        
+        const valid = isValid(shape, startX, startY);
+        for (let y = 0; y < shape.length; y++) {
+            for (let x = 0; x < shape[y].length; x++) {
+                if (shape[y][x]) {
+                    const bx = startX + x;
+                    const by = startY + y;
+                    if (bx >= 0 && bx < SIZE && by >= 0 && by < SIZE) {
+                        cells[by * SIZE + bx].classList.add(valid ? 'preview' : 'preview-invalid');
+                    }
+                }
+            }
+        }
+    }
+
+    function onDragEnd(e) {
+        document.removeEventListener('pointermove', onDragMove);
+        document.removeEventListener('pointerup', onDragEnd);
+        
+        const piece = pieces[dragData.idx];
+        const valid = isValid(piece.shape, hoverGrid.x, hoverGrid.y);
+
+        if (valid) {
+            for (let y = 0; y < piece.shape.length; y++) {
+                for (let x = 0; x < piece.shape[y].length; x++) {
+                    if (piece.shape[y][x]) {
+                        boardState[hoverGrid.y + y][hoverGrid.x + x] = piece.id;
+                    }
+                }
+            }
+            piece.used = true;
+            checkWin();
+        }
+
+        if (ghostEl) ghostEl.remove();
+        ghostEl = null;
+        dragData = null;
+        hoverGrid = { x: -1, y: -1 };
+        
+        renderBoard();
+        renderPieces();
+        updateIndicators();
+    }
+
+    function isValid(shape, startX, startY) {
+        for (let y = 0; y < shape.length; y++) {
+            for (let x = 0; x < shape[y].length; x++) {
+                if (shape[y][x]) {
+                    const bx = startX + x;
+                    const by = startY + y;
+                    if (bx < 0 || bx >= SIZE || by < 0 || by >= SIZE) return false;
+                    if (isObstacle(bx, by) || boardState[by][bx] > 0) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function checkWin() {
+        let isWin = true;
+        for (let y = 0; y < SIZE; y++) {
+            for (let x = 0; x < SIZE; x++) {
+                if (!isObstacle(x, y) && boardState[y][x] === 0) {
+                    isWin = false; break;
+                }
+            }
+        }
+        if (isWin) {
+            setTimeout(() => {
+                if (currentLevelIdx < LEVELS.length - 1) {
+                    document.getElementById('btn-next').style.display = 'inline-block';
+                } else {
+                    alert("🏆 恭喜！所有终端修复完毕！你通关了！");
+                }
+            }, 200);
+        }
+    }
+
+    function resetLevel() { loadLevel(currentLevelIdx); }
+    function nextLevel() { if (currentLevelIdx < LEVELS.length - 1) loadLevel(currentLevelIdx + 1); }
+
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    
+    // 启动第一关
+    loadLevel(0);
+</script>
+</body>
+</html>
